@@ -224,7 +224,7 @@ lock_release(struct lock *lock)
 
 	// if the lock is already unlocked, we should panic
 	KASSERT(lock->locked == true);
-
+	KASSERT(lock->holding_thrd == curthread);
 	// release the lock
 	lock->locked = false;
 
