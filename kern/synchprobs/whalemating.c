@@ -40,11 +40,35 @@
 #include <test.h>
 #include <synch.h>
 
+static struct cv *whale_cv;
+static struct lock *whale_lock;
+static struct semaphore *female_sem, *male_sem;
+
+struct Whales {
+	int male;
+	int female;
+};
+static struct Whales whales;
+
 /*
  * Called by the driver during initialization.
  */
 
 void whalemating_init() {
+
+	whale_lock = lock_create("whale_lock");
+	KASSERT(whale_lock != NULL);
+	whale_cv = cv_create("whale_cv");
+	KASSERT(whale_cv != NULL);
+
+	female_sem = sem_create("female_sem", 0);
+	male_sem = sem_create("male_sem", 0);
+
+	KASSERT(male_sem != NULL);
+	KASSERT(female_sem != NULL);
+
+	whales.male = 0;
+	whales.female = 0;
 	return;
 }
 
@@ -54,38 +78,80 @@ void whalemating_init() {
 
 void
 whalemating_cleanup() {
+
+	lock_destroy(whale_lock);
+	cv_destroy(whale_cv);
+	sem_destroy(female_sem);
+	sem_destroy(male_sem);
 	return;
 }
 
 void
 male(uint32_t index)
 {
-	(void)index;
 	/*
 	 * Implement this function by calling male_start and male_end when
 	 * appropriate.
 	 */
+	male_start(index);
+
+	P(male_sem); // increase the number of males available
+
+	lock_acquire(whale_lock);
+	while (whales.male == 0) {
+		cv_wait(whale_cv, whale_lock);
+	}
+	whales.male = 0;
+	lock_release(whale_lock);
+
+	male_end(index);
 	return;
 }
 
 void
 female(uint32_t index)
 {
-	(void)index;
 	/*
 	 * Implement this function by calling female_start and female_end when
 	 * appropriate.
 	 */
+	female_start(index);
+
+	P(female_sem);
+
+	lock_acquire(whale_lock);
+
+	while (whales.female == 0) {
+		cv_wait(whale_cv, whale_lock);
+	}
+	whales.female = 0;
+	// we hold the lock here and there are enough whales for mating.
+	lock_release(whale_lock);
+
+	female_end(index);
 	return;
 }
 
 void
 matchmaker(uint32_t index)
 {
-	(void)index;
 	/*
 	 * Implement this function by calling matchmaker_start and matchmaker_end
 	 * when appropriate.
 	 */
+	matchmaker_start(index);
+
+	V(male_sem);
+	V(female_sem);
+
+	lock_acquire(whale_lock);
+	whales.male = 1;
+	whales.female = 1;
+
+	cv_broadcast(whale_cv, whale_lock);
+
+	lock_release(whale_lock);
+
+	matchmaker_end(index);
 	return;
 }
