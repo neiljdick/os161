@@ -339,3 +339,101 @@ cv_broadcast(struct cv *cv, struct lock *lock)
 	wchan_wakeall(cv->cv_wchan, &cv->cv_slock);
 	spinlock_release(&cv->cv_slock);
 }
+
+
+
+struct rwlock * rwlock_create(const char *name)
+{
+	struct rwlock *lock;
+
+	lock = kmalloc(sizeof(*lock));
+	if (lock == NULL) {
+		return NULL;
+	}
+
+	lock->rwlock_name = kstrdup(name);
+	if (lock->rwlock_name == NULL) {
+		kfree(lock);
+		return NULL;
+	}
+	lock->rwl_wchan = wchan_create(lock->rwlock_name);
+	if (lock->rwl_wchan == NULL) {
+		kfree(lock->rwlock_name);
+		kfree(lock);
+		return NULL;
+	}
+
+	spinlock_init(&lock->rwl_slock);
+
+
+	lock->read_count = 0;
+	lock->write_count = 0;
+	lock->locked = false;
+	return lock;
+}
+
+void rwlock_destroy(struct rwlock *lock)
+{
+	KASSERT(lock->write_count == 0);
+	KASSERT(lock->write_count == 0);
+	KASSERT(lock->locked == false);
+
+
+	spinlock_cleanup(&lock->rwl_slock);
+	wchan_destroy(lock->rwl_wchan);
+	kfree(lock->rwlock_name);
+	kfree(lock);
+	;
+}
+
+void rwlock_acquire_read(struct rwlock *lock)
+{
+	KASSERT(lock != NULL);
+	spinlock_acquire(&lock->rwl_slock);
+	while (lock->write_count != 0) {
+		wchan_sleep(lock->rwl_wchan, &lock->rwl_slock);
+	}
+	lock->read_count++;
+
+	spinlock_release(&lock->rwl_slock);
+}
+void rwlock_release_read(struct rwlock *lock)
+{
+	KASSERT(lock != NULL);
+	spinlock_acquire(&lock->rwl_slock);
+	lock->read_count--;
+	KASSERT(lock->read_count >=0);
+
+	// wake up pending writes
+	//if (lock->write_count > 0)
+		wchan_wakeall(lock->rwl_wchan, &lock->rwl_slock);
+
+	spinlock_release(&lock->rwl_slock);
+}
+void rwlock_acquire_write(struct rwlock *lock)
+{
+	KASSERT(lock != NULL);
+
+	spinlock_acquire(&lock->rwl_slock);
+	lock->write_count++;
+
+	while ((lock->read_count > 0) || lock->locked) {
+		wchan_sleep(lock->rwl_wchan, &lock->rwl_slock);
+	}
+	lock->locked = true;
+	spinlock_release(&lock->rwl_slock);
+
+}
+
+void rwlock_release_write(struct rwlock *lock)
+{
+	KASSERT(lock != NULL);
+	spinlock_acquire(&lock->rwl_slock);
+	KASSERT(lock->locked);
+	KASSERT(lock->write_count > 0);
+	lock->write_count--;
+	lock->locked = false;
+	wchan_wakeall(lock->rwl_wchan, &lock->rwl_slock);
+
+	spinlock_release(&lock->rwl_slock);
+}
