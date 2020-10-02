@@ -69,12 +69,26 @@
 #include <test.h>
 #include <synch.h>
 
+
+static struct lock *locks[4];
+static struct lock *global_lock;
+static const char* lock_names[4] = {
+	"lock0",
+	"lock1",
+	"lock2",
+	"lock3"
+};
+
 /*
  * Called by the driver during initialization.
  */
 
 void
 stoplight_init() {
+ 	for (int i = 0; i < 4; i++) {
+		locks[i] = lock_create(lock_names[i]);
+	}
+	global_lock = lock_create("global");
 	return;
 }
 
@@ -83,36 +97,69 @@ stoplight_init() {
  */
 
 void stoplight_cleanup() {
+ 	for (int i = 0; i < 4; i++) {
+		lock_destroy(locks[i]);
+	}
+	lock_destroy(global_lock);
 	return;
 }
 
 void
 turnright(uint32_t direction, uint32_t index)
 {
-	(void)direction;
-	(void)index;
-	/*
-	 * Implement this function.
-	 */
+	lock_acquire(global_lock);
+	lock_acquire(locks[direction]);
+	lock_release(global_lock);
+	inQuadrant(direction, index);
+	leaveIntersection(index);
+	lock_release(locks[direction]);
+
 	return;
 }
+
 void
 gostraight(uint32_t direction, uint32_t index)
 {
-	(void)direction;
-	(void)index;
-	/*
-	 * Implement this function.
-	 */
+	int next = (direction + 3) % 4;
+
+	lock_acquire(global_lock);
+	lock_acquire(locks[direction]);
+	lock_acquire(locks[next]);
+	lock_release(global_lock);
+
+	inQuadrant(direction, index);
+	inQuadrant(next, index);
+	lock_release(locks[direction]);
+
+	leaveIntersection(index);
+
+	lock_release(locks[next]);
+
 	return;
 }
+
 void
 turnleft(uint32_t direction, uint32_t index)
 {
-	(void)direction;
-	(void)index;
-	/*
-	 * Implement this function.
-	 */
+	int next = (direction + 3) % 4;
+	int last = (direction + 2) % 4;
+
+	lock_acquire(global_lock);
+	lock_acquire(locks[direction]);
+	lock_acquire(locks[next]);
+	lock_acquire(locks[last]);
+	lock_release(global_lock);
+
+	inQuadrant(direction, index);
+	inQuadrant(next, index);
+	lock_release(locks[direction]);
+
+	inQuadrant(last, index);
+	lock_release(locks[next]);
+
+	leaveIntersection(index);
+
+	lock_release(locks[last]);
+
 	return;
 }
